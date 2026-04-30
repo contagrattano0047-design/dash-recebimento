@@ -1061,7 +1061,7 @@ function renderPipeline(d){
 
 function forecastMissing(txt){
   const v=safeLower(txt||'');
-  return !v || v.includes('não informada') || v.includes('sem data') || v.includes('a definir');
+  return !v || v.includes('nao informada') || v.includes('nao informado') || v.includes('sem data') || v.includes('a definir');
 }
 function riskSummary(d){
   const rows=d.recebiveis||[];
