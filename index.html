@@ -611,6 +611,7 @@ function parseReceivablesData(receberBuf,controleBuf){
   const rvRows=crSheetRows(wbC,'Resultado Vendas');
   const pmrRows=crSheetRows(wbC,'Recebimentos de Valores');
   const pmrByNf=new Map(pmrRows.map(r=>[crText(r['D_NFSaida[nNF]']),crNum(r['[PMR__Ponderado_]'])||null]));
+  const hasResultadoVendas = rvRows.some(r=>crNum(r['Total']) && crDate(r['Data Fat']||r['Prev. Fat']));
 
   for(const r of openRows){
     const key=crCompany(r['Empresa']), d=data[key], valor=crNum(r['A Receber']);
@@ -643,8 +644,14 @@ function parseReceivablesData(receberBuf,controleBuf){
     cur.dataEntrega=cur.dataEntrega==='Não informada'?(crDate(r['Data Ent'])||'Não informada'):cur.dataEntrega;
     cur.prevFat=cur.prevFat==='Não informada'?(crDate(r['Prev. Fat'])||'Não informada'):cur.prevFat;
     rvByNf.set(nf,cur);
+    if(hasResultadoVendas){
+      const key=crCompany(r['Empresa']), date=crDate(r['Data Fat']||r['Prev. Fat']), mi=crMonthIndex(date), valor=crNum(r['Total']);
+      if(mi!=null) data[key].mensal.fat[mi]+=valor;
+      data[key].notasFaturadas.push({data:date,empresa:crCompanyLabel(key),nota:nf,pedido:'PV '+crText(r['PV'],'-'),empenho:crText(r['Empenho'],'-'),cliente:crText(r['Cliente'],'Não informado'),valor,margem:crNum(r['MC (%)'])*100,resultado:crNum(r['MC ($)']),dataRecebimento:crDate(r['Data Recebimento R$'])||'Não informada',dataEntrega:crDate(r['Data Ent'])||'Não informada',pmr:pmrByNf.get(nf)||null,prevFat:crDate(r['Prev. Fat'])||'Não informada'});
+    }
   }
   for(const r of fatRowsR){
+    if(hasResultadoVendas) continue;
     const key=crCompany(r['Minha Empresa (Nome Fantasia)']), date=crDate(r['Data de Emissão (completa)']), mi=crMonthIndex(date), nf=crText(r['Nota Fiscal']);
     const valor=crNum(r['Total da Nota Fiscal']);
     if(mi!=null) data[key].mensal.fat[mi]+=valor;
