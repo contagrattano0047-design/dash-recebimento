@@ -195,14 +195,22 @@ table{width:100%;border-collapse:collapse;font-size:13px}th{background:var(--gra
 .pipeline-verdict p{font-size:14px;line-height:1.5;color:rgba(255,255,255,.78)}
 .pipeline-alerts{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-sm)}
 .pipeline-alerts h3{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--gray-500);margin-bottom:12px}
+.pipeline-section{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:22px;margin-bottom:18px;box-shadow:var(--shadow-sm)}
+.pipeline-section h2{font-family:'DM Serif Display',serif;font-size:25px;font-weight:400;color:var(--navy);margin-bottom:14px}
+.pipeline-section p{font-size:14px;line-height:1.6;color:var(--gray-700);margin-bottom:12px}
+.pipeline-section .highlight{font-weight:800;color:var(--navy)}
+.pipeline-quick{margin-top:18px;padding:18px;background:var(--gray-50);border-radius:12px;border-left:5px solid var(--blue)}
+.pipeline-quick h3{font-size:16px;margin-bottom:10px;color:var(--navy)}
 .pipeline-tag{display:inline-flex;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:800;text-transform:uppercase;white-space:nowrap}
 .pipeline-tag.blue{background:#e8eefc;color:#1e3a8a}.pipeline-tag.green{background:#e6f4ef;color:var(--green)}
 .pipeline-tag.amber{background:#fff4e2;color:#b76a00}.pipeline-tag.red{background:var(--red-pale);color:var(--red)}
 .pipeline-tag.gray{background:#eef1f5;color:var(--gray-600)}
 .pipeline-bars{margin-top:12px}.pipeline-bar-row{margin-bottom:13px}.pipeline-bar-label{display:flex;justify-content:space-between;font-size:12px;color:var(--gray-600);margin-bottom:5px}
-.pipeline-bar{height:10px;background:#edf1f6;border-radius:999px;overflow:hidden}.pipeline-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:999px}
+.pipeline-bar{height:10px;background:#edf1f6;border-radius:999px;overflow:hidden}.pipeline-fill{height:100%;border-radius:999px}
+.pipeline-fill.blue{background:#2563eb}.pipeline-fill.green{background:#0ea5e9}.pipeline-fill.amber{background:#f59e0b}.pipeline-fill.red{background:#ef4444}.pipeline-fill.gray{background:#94a3b8}
 .pipeline-table{width:100%;border-collapse:collapse;font-size:12px}.pipeline-table th{text-align:left;color:var(--gray-600);background:var(--gray-50);padding:11px 12px;border-bottom:1px solid var(--gray-200);font-weight:800}
 .pipeline-table td{padding:11px 12px;border-bottom:1px solid var(--gray-100);vertical-align:top}.pipeline-table .right{text-align:right}.pipeline-table tr:hover td{background:#fffdf6}
+.pipeline-table .total-row td{background:var(--gray-50);font-weight:700}
 .pipeline-list-head{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:12px}
 .pipeline-list-head h3{font-size:16px;color:var(--navy)}.pipeline-list-head p{font-size:12px;color:var(--gray-500)}
 @media(max-width:1100px){.pipeline-grid,.pipeline-exec{grid-template-columns:1fr 1fr}.pipeline-table{min-width:900px}.pipeline-scroll{overflow:auto}}
@@ -408,6 +416,12 @@ table{width:100%;border-collapse:collapse;font-size:13px}th{background:var(--gra
       <div class="pipeline-card risk"><h3>Sem semana definida</h3><div class="value negative" id="pipelineSemSemana">R$ 0</div><div class="sub">Volume dependente de avanço operacional.</div></div>
     </div>
 
+    <div class="pipeline-section">
+      <h2>Resumo Executivo</h2>
+      <div id="pipelineResumoExecutivo"></div>
+      <div class="pipeline-quick" id="pipelineLeituraRapida"></div>
+    </div>
+
     <div class="grid-2">
       <div class="panel">
         <h2>Montante por Etapa</h2>
@@ -431,9 +445,14 @@ table{width:100%;border-collapse:collapse;font-size:13px}th{background:var(--gra
       </div>
     </div>
 
+    <div class="pipeline-section">
+      <h2>Leitura Gerencial do Pipeline</h2>
+      <div id="pipelineLeituraGerencial"></div>
+    </div>
+
     <div class="panel">
       <div class="pipeline-list-head">
-        <div><h3>Notas no Pipeline</h3><p>Visão operacional das notas que sustentam o pipeline de recebimentos, com etapa puxada da coluna W.</p></div>
+        <div><h3>Notas no Pipeline</h3><p>Visão operacional das notas que sustentam o pipeline de recebimentos, com etapa puxada da previsão, tramitação e observações da planilha.</p></div>
         <span class="ag-badge" id="pipelineListaResumo">0 notas</span>
       </div>
       <div class="ag-filters compact">
@@ -688,7 +707,7 @@ function parseReceivablesData(receberBuf,controleBuf){
     d.carteira+=valor; if(statusTxt.toLowerCase().includes('inad')) d.inadimplencia+=valor; else d.aVencer+=valor;
     const mi=crMonthIndex(venc); if(mi!=null){d.mensal.carteira[mi]+=valor;if(statusTxt.toLowerCase().includes('inad'))d.mensal.inad[mi]+=valor;d.mensal.proj[mi]+=valor;}
     const isInad=statusTxt.toLowerCase().includes('inad');
-    const titulo={data:venc||emissao,empresa:crCompanyLabel(key),nota:nf,pedido:crText(crGet(r,'PEDIDO OM','Pedido OM','Ref. NF'),'-'),empenho:crText(crGet(r,'Empenho'),'-'),cliente,setor,emissao,vencimento:venc,previsao,valor,dias,faixa:crAgingLabel(dias),status:isInad?'atrasado':'pendente',statusPlanilha:statusTxt,conta:crText(crGet(r,'Fonte','Canal'),'-'),risco:isInad&&(dias>60||forecastMissing(previsao))?'alto':'baixo',responsavel:'Financeiro / Cobrança',acao:forecastMissing(previsao)?'Confirmar data de recebimento':'Monitorar baixa na data prevista'};
+    const titulo={data:venc||emissao,empresa:crCompanyLabel(key),nota:nf,pedido:crText(crGet(r,'PEDIDO OM','Pedido OM','Ref. NF'),'-'),empenho:crText(crGet(r,'Empenho'),'-'),cliente,setor,emissao,vencimento:venc,previsao,valor,dias,faixa:crAgingLabel(dias),status:isInad?'atrasado':'pendente',statusPlanilha:statusTxt,conta:crText(crGet(r,'Fonte','Canal'),'-'),processo:crText(crGet(r,'N° de Processo','N de Processo','Numero de Processo'),'-'),aberturaProcesso:crDate(crGet(r,'Data de abertura do processo')),ultimaTramitacao:crText(crGet(r,'Última tramitação','Ultima tramitacao'),''),dataUltimaTramitacao:crDate(crGet(r,'Data da Última tramitação','Data da Ultima tramitacao')),obs:crText(crGet(r,'OBS','Observação','Observacao'),''),entrega:crText(crGet(r,'Entrega'),''),indicador:crText(crGet(r,'Indicador'),''),diasProcesso:crNum(crGet(r,'Dias processo em atraso')),diasUltimaTramitacao:crNum(crGet(r,'Dias desde a última tramitação','Dias desde a ultima tramitacao')),risco:isInad&&(dias>60||forecastMissing(previsao))?'alto':'baixo',responsavel:'Financeiro / Cobrança',acao:forecastMissing(previsao)?'Confirmar data de recebimento':'Monitorar baixa na data prevista'};
     d.recebiveis.push(titulo);
     if(isInad) d.inadimplentes.push(titulo);
   }
@@ -767,20 +786,34 @@ function weekLabel(dateStr){
   const end=new Date(start); end.setDate(start.getDate()+6);
   return `${String(start.getDate()).padStart(2,'0')}/${String(start.getMonth()+1).padStart(2,'0')} a ${String(end.getDate()).padStart(2,'0')}/${String(end.getMonth()+1).padStart(2,'0')}`;
 }
+function semanaSortKey(label){
+  if(label==='Sem semana definida') return 99999999;
+  const m=String(label||'').match(/^(\d{2})\/(\d{2})/);
+  return m?Number(m[2]+m[1]):99999998;
+}
+function pipelineStageInfo(n){
+  if(!forecastMissing(n.previsao)) return {nome:'Previsão definida',tag:'blue',criterio:'Data preenchida em Previsão de Pagamento',base:'Previsão de pagamento',acao:'Confirmar recebimento na data prevista'};
+  const txt=safeLower([n.ultimaTramitacao,n.obs,n.indicador,n.entrega,n.processo].join(' '));
+  if(/nl|pdo|pdr|ordem bancaria|ordem banc|aguardando pagamento|pagamento|liquid/.test(txt)) return {nome:'Financeiro avançado',tag:'green',criterio:'NL emitida, PDO/PDR, ordem bancária ou aguardando pagamento',base:'Financeiro avançado',acao:'Acompanhar financeiro para antecipar liquidação'};
+  if(/abertura|processo|eld|nota patrimonial|atest|atesta|reconhecimento|divida|d\.o/.test(txt)) return {nome:'Processamento administrativo',tag:'amber',criterio:'Abertura de processo, ELD, nota patrimonial ou atestação',base:'Tramitação administrativa',acao:'Acelerar processo, atestação ou emissão documental'};
+  if(/almox|entrega|financeiro|recebimento fiscal|fiscal/.test(txt)) return {nome:'Almoxarifado / entrega / financeiro',tag:'amber',criterio:'Almoxarifado, previsão de entrega ou tramitação no financeiro',base:'Operação / entrega / financeiro',acao:'Converter marco operacional em previsão de pagamento'};
+  return {nome:'Sem definição objetiva',tag:'red',criterio:'Sem previsão formal e sem marco operacional claro',base:'Em tramitação / observação / sem data objetiva',acao:'Atualizar tramitação/OBS e formalizar próximo passo'};
+}
 function buildPipeline(d){
-  const rows=(d.inadimplentes||[]).filter(n=>forecastMissing(n.previsao)||n.dias>0);
+  const rows=(d.recebiveis||[]).filter(n=>(n.valor||0)>0);
   const total=rows.reduce((s,n)=>s+n.valor,0), prevista=rows.filter(n=>!forecastMissing(n.previsao)).reduce((s,n)=>s+n.valor,0);
   const etapasMap={}, semanasMap={};
   rows.forEach(n=>{
-    const etapa=forecastMissing(n.previsao)?'Sem previsão formal':'Previsão informada', tag=forecastMissing(n.previsao)?'red':'green';
-    etapasMap[etapa]=etapasMap[etapa]||{nome:etapa,tag,criterio:tag==='red'?'Previsão de pagamento vazia':'Previsão de pagamento preenchida',qtde:0,valor:0};
-    etapasMap[etapa].qtde++; etapasMap[etapa].valor+=n.valor;
+    const st=pipelineStageInfo(n);
+    etapasMap[st.nome]=etapasMap[st.nome]||{nome:st.nome,tag:st.tag,criterio:st.criterio,qtde:0,valor:0};
+    etapasMap[st.nome].qtde++; etapasMap[st.nome].valor+=n.valor;
     const sem=forecastMissing(n.previsao)?'Sem semana definida':weekLabel(n.previsao);
     semanasMap[sem]=(semanasMap[sem]||0)+n.valor;
   });
-  const semanas=Object.entries(semanasMap).map(([semana,valor])=>({semana,base:semana==='Sem semana definida'?'Sem previsão informada':'Previsão de pagamento',valor})).sort((x,y)=>y.valor-x.valor);
-  const maior=semanas[0]||{semana:'Sem semana definida',valor:0};
-  return {total,prevista,maiorSemanaValor:maior.valor,maiorSemanaLabel:maior.semana,semSemana:semanasMap['Sem semana definida']||0,etapas:Object.values(etapasMap),semanas,notas:rows.map(n=>({empresa:n.empresa,nota:'NF '+n.nota,cliente:n.cliente,pedido:n.pedido,empenho:n.empenho,etapa:forecastMissing(n.previsao)?'Sem previsão formal':'Previsão informada',tag:forecastMissing(n.previsao)?'red':'green',previsao:n.previsao,valor:n.valor,acao:forecastMissing(n.previsao)?'Formalizar previsão de pagamento':'Monitorar baixa na data prevista'}))};
+  const semanas=Object.entries(semanasMap).map(([semana,valor])=>({semana,base:semana==='Sem semana definida'?'Em tramitação / observação / sem data objetiva':'Previsão de pagamento',valor})).sort((x,y)=>semanaSortKey(x.semana)-semanaSortKey(y.semana));
+  const maior=semanas.filter(s=>s.semana!=='Sem semana definida').sort((x,y)=>y.valor-x.valor)[0]||semanas.sort((x,y)=>y.valor-x.valor)[0]||{semana:'Sem semana definida',valor:0};
+  const order={'Previsão definida':1,'Financeiro avançado':2,'Processamento administrativo':3,'Almoxarifado / entrega / financeiro':4,'Sem definição objetiva':5};
+  return {total,prevista,maiorSemanaValor:maior.valor,maiorSemanaLabel:maior.semana,semSemana:semanasMap['Sem semana definida']||0,etapas:Object.values(etapasMap).sort((a,b)=>(order[a.nome]||99)-(order[b.nome]||99)),semanas,notas:rows.map(n=>{const st=pipelineStageInfo(n);return {empresa:n.empresa,nota:'NF '+n.nota,cliente:n.cliente,pedido:n.pedido,empenho:n.empenho&&n.empenho!=='-'?n.empenho:n.processo,etapa:st.nome,tag:st.tag,previsao:n.previsao,valor:n.valor,acao:st.acao,tramite:n.ultimaTramitacao||n.obs||n.indicador||'-'};})};
 }
 
 const globalDateFilter={year:'todos',start:'',end:''};
@@ -849,15 +882,26 @@ function syncDateFilterControls(){
 function mergePipeline(a,b){
   const empty={total:0,prevista:0,maiorSemanaValor:0,maiorSemanaLabel:'Sem dados parametrizados',semSemana:0,etapas:[],semanas:[],notas:[]};
   a=a||empty;b=b||empty;
-  const maior = (a.maiorSemanaValor||0) >= (b.maiorSemanaValor||0) ? a : b;
+  const etapasMap={}, semanasMap={};
+  [...(a.etapas||[]),...(b.etapas||[])].forEach(e=>{
+    etapasMap[e.nome]=etapasMap[e.nome]||{nome:e.nome,tag:e.tag,criterio:e.criterio,qtde:0,valor:0};
+    etapasMap[e.nome].qtde+=e.qtde||0; etapasMap[e.nome].valor+=e.valor||0;
+  });
+  [...(a.semanas||[]),...(b.semanas||[])].forEach(s=>{
+    semanasMap[s.semana]=semanasMap[s.semana]||{semana:s.semana,base:s.base,valor:0};
+    semanasMap[s.semana].valor+=s.valor||0;
+  });
+  const semanas=Object.values(semanasMap).sort((x,y)=>semanaSortKey(x.semana)-semanaSortKey(y.semana));
+  const maior = semanas.filter(s=>s.semana!=='Sem semana definida').sort((x,y)=>y.valor-x.valor)[0]||semanas.sort((x,y)=>y.valor-x.valor)[0]||{semana:'Sem dados parametrizados',valor:0};
+  const order={'Previsão definida':1,'Financeiro avançado':2,'Processamento administrativo':3,'Almoxarifado / entrega / financeiro':4,'Sem definição objetiva':5};
   return {
     total:(a.total||0)+(b.total||0),
     prevista:(a.prevista||0)+(b.prevista||0),
-    maiorSemanaValor:maior.maiorSemanaValor||0,
-    maiorSemanaLabel:maior.maiorSemanaLabel||'Sem dados parametrizados',
+    maiorSemanaValor:maior.valor||0,
+    maiorSemanaLabel:maior.semana||'Sem dados parametrizados',
     semSemana:(a.semSemana||0)+(b.semSemana||0),
-    etapas:[...(a.etapas||[]),...(b.etapas||[])],
-    semanas:[...(a.semanas||[]),...(b.semanas||[])],
+    etapas:Object.values(etapasMap).sort((x,y)=>(order[x.nome]||99)-(order[y.nome]||99)),
+    semanas,
     notas:[...(a.notas||[]),...(b.notas||[])]
   };
 }
@@ -1113,6 +1157,16 @@ function renderPipeline(d){
   const indefPct=p.total?p.semSemana/p.total*100:0;
   const byId=id=>document.getElementById(id);
   if(!byId('pipelineTotal')) return;
+  const companyName=currentCompany==='consolidado'?'consolidada':currentCompany.charAt(0).toUpperCase()+currentCompany.slice(1);
+  const mainWeek=(p.semanas||[]).filter(s=>s.semana!=='Sem semana definida').sort((a,b)=>(b.valor||0)-(a.valor||0))[0]||null;
+  const secondWeek=(p.semanas||[]).filter(s=>s.semana!=='Sem semana definida'&&s!==mainWeek).sort((a,b)=>(b.valor||0)-(a.valor||0))[0]||null;
+  const etapaSelect=byId('pipelineEtapa');
+  if(etapaSelect){
+    const current=pipelineFilters.etapa||'todos';
+    etapaSelect.innerHTML='<option value="todos">Todas</option>'+(p.etapas||[]).map(e=>`<option value="${e.nome}">${e.nome}</option>`).join('');
+    etapaSelect.value=[...etapaSelect.options].some(o=>o.value===current)?current:'todos';
+    pipelineFilters.etapa=etapaSelect.value;
+  }
   byId('pipelineTotal').textContent=brl(p.total);
   byId('pipelinePrevista').textContent=brl(p.prevista);
   byId('pipelinePrevistaPct').textContent=`${pct(previstaPct)} da carteira com data objetiva.`;
@@ -1120,20 +1174,30 @@ function renderPipeline(d){
   byId('pipelineMaiorSemanaLabel').textContent=p.maiorSemanaLabel;
   byId('pipelineSemSemana').textContent=brl(p.semSemana);
   byId('pipelineVerdictTitle').textContent=previstaPct>=50?'Pipeline com boa visibilidade':'Previsibilidade ainda limitada';
-  byId('pipelineVerdictText').textContent=`${pct(previstaPct)} do pipeline possui previsão firme. O bloco sem semana definida representa ${pct(indefPct)} e deve ser convertido em agenda formal de recebimento.`;
+  byId('pipelineVerdictText').textContent=`${pct(previstaPct)} do pipeline possui previsão firme. O bloco sem semana definida representa ${pct(indefPct)} e deve ser convertido em agenda formal de recebimento a partir da tramitação operacional.`;
   byId('pipelineAlerts').innerHTML=[
     ['orange',`${brl(p.semSemana)} ainda sem semana definida.`],
     ['green',`${brl(p.prevista)} já possui previsão objetiva de recebimento.`],
     ['orange',`Maior concentração prevista: ${p.maiorSemanaLabel}, com ${brl(p.maiorSemanaValor)}.`]
   ].map(a=>`<div class="alert-item"><span class="alert-dot ${a[0]}"></span><span>${a[1]}</span></div>`).join('');
 
+  byId('pipelineResumoExecutivo').innerHTML=`<p>A carteira ${companyName} apresenta um pipeline total de <span class="highlight">${brl(p.total)}</span>, com um bloco de <strong>${brl(p.prevista)}</strong> já convertido em <strong>previsão firme de recebimento</strong>, equivalente a <strong>${pct(previstaPct)}</strong> da base. Isso assegura visibilidade parcial do curto prazo, mas ainda deixa parcela relevante da carteira dependente de andamento operacional.</p>
+  <p>${mainWeek?`O principal pico de entrada está concentrado na semana de <span class="highlight">${mainWeek.semana}</span>, com <span class="highlight">${brl(mainWeek.valor)}</span>. ${secondWeek?`Antes disso, a semana de ${secondWeek.semana} concentra <strong>${brl(secondWeek.valor)}</strong>.`:''}`:'Ainda não há semana com previsão firme na base filtrada.'}</p>
+  <p>Em contrapartida, há <span class="highlight">${brl(p.semSemana)}</span> ainda sem semana definida, exigindo acompanhamento ativo para transformar tramitação, observação e marcos operacionais em data objetiva de recebimento.</p>`;
+
+  byId('pipelineLeituraRapida').innerHTML=`<h3>Leitura Estratégica (Rápida)</h3>
+  <p><strong>Previsão firme ${previstaPct>=50?'relevante':'ainda limitada'} (${pct(previstaPct)})</strong> - o pipeline já possui entradas mapeadas, mas parte da carteira ainda depende de avanço operacional.</p>
+  <p><strong>${mainWeek?'Pico relevante em '+mainWeek.semana:'Sem pico semanal definido'}</strong> - ${mainWeek?'essa semana ancora o curto prazo e concentra o maior volume objetivamente previsto.':'a prioridade é calendarizar os títulos sem previsão.'}</p>
+  <p><strong>Dependência de tramitação</strong> - a carteira exige atuação sobre processos, almoxarifado, atestação, financeiro e conversão de status em previsão formal de recebimento.</p>`;
+
+  const totalRow=`<tr class="total-row"><td><span class="pipeline-tag gray">Total geral</span></td><td>Carteira aberta consolidada</td><td class="right">${(p.notas||[]).length}</td><td class="right"><strong>${brl(p.total)}</strong></td></tr>`;
   byId('pipelineEtapas').innerHTML=(p.etapas||[]).length?(p.etapas||[]).map(e=>`<tr>
     <td><span class="pipeline-tag ${e.tag}">${e.nome}</span></td><td>${e.criterio}</td><td class="right">${e.qtde}</td><td class="right"><strong>${brl(e.valor)}</strong></td>
-  </tr>`).join(''):`<tr><td colspan="4">Sem pipeline parametrizado para esta visão.</td></tr>`;
+  </tr>`).join('')+totalRow:`<tr><td colspan="4">Sem pipeline parametrizado para esta visão.</td></tr>`;
 
   byId('pipelineBars').innerHTML=(p.etapas||[]).map(e=>{
     const w=p.total?Math.max(1,(e.valor/p.total*100)):0;
-    return `<div class="pipeline-bar-row"><div class="pipeline-bar-label"><span>${e.nome}</span><span>${pct(p.total?e.valor/p.total*100:0)}</span></div><div class="pipeline-bar"><div class="pipeline-fill" style="width:${w}%"></div></div></div>`;
+    return `<div class="pipeline-bar-row"><div class="pipeline-bar-label"><span>${e.nome}</span><span>${pct(p.total?e.valor/p.total*100:0)}</span></div><div class="pipeline-bar"><div class="pipeline-fill ${e.tag}" style="width:${w}%"></div></div></div>`;
   }).join('');
 
   byId('pipelineSemanas').innerHTML=(p.semanas||[]).length?(p.semanas||[]).map(s=>`<tr>
@@ -1143,10 +1207,13 @@ function renderPipeline(d){
   const pipelineRows=filterPipelineRows(p.notas||[]);
   byId('pipelineNotas').innerHTML=pipelineRows.length?pipelineRows.map(n=>`<tr>
     <td><strong>${n.nota}</strong></td><td>${n.empresa||'-'}</td><td>${n.cliente}</td><td>${n.pedido}</td><td>${n.empenho}</td>
-    <td><span class="pipeline-tag ${n.tag}">${n.etapa}</span></td><td>${n.previsao}</td><td class="right"><strong>${brl(n.valor)}</strong></td><td>${n.acao}</td>
+    <td><span class="pipeline-tag ${n.tag}">${n.etapa}</span><br><small>${n.tramite||'-'}</small></td><td>${n.previsao}</td><td class="right"><strong>${brl(n.valor)}</strong></td><td>${n.acao}</td>
   </tr>`).join(''):`<tr><td colspan="9">Sem notas de pipeline para os filtros selecionados.</td></tr>`;
   byId('pipelineListaResumo').textContent=`${pipelineRows.length} notas`;
-  byId('pipelineNotaGerencial').textContent='Leitura CFO: a prioridade é transformar itens em tramitação em previsão firme e proteger as semanas já calendarizadas.';
+  byId('pipelineNotaGerencial').textContent='Leitura CFO: proteger os títulos com previsão firme, acelerar financeiro avançado e converter tramitação/observações em datas objetivas de recebimento.';
+  byId('pipelineLeituraGerencial').innerHTML=`<p>O pipeline ${companyName} combina uma base de entradas já calendarizadas com uma massa ainda em tramitação administrativa. Isso significa que o potencial de conversão de caixa é alto, mas a previsibilidade efetiva ainda depende da evolução de processos, emissões de NL, PDO/PDR, atestações e movimentações em almoxarifado.</p>
+  <p>Do ponto de vista gerencial, a estratégia financeira deve priorizar três frentes: <strong>(i)</strong> assegurar a concretização dos títulos com previsão já lançada, <strong>(ii)</strong> atuar sobre os casos em financeiro avançado para antecipar a liquidação, e <strong>(iii)</strong> acelerar os títulos em processamento e almoxarifado para ampliar a visibilidade de caixa das próximas semanas.</p>
+  <p>A principal oportunidade de melhoria está na conversão do bloco sem definição objetiva em agenda formal de recebimento, reduzindo a dependência de acompanhamento reativo e elevando a previsibilidade do fluxo financeiro.</p>`;
 }
 
 
