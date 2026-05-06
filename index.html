@@ -558,9 +558,7 @@ async function readFromSharePoint(){
     document.getElementById('btnRefresh').disabled=false;
     document.getElementById('btnLogout').style.display='inline-flex';
     document.getElementById('lastUpdateTime').textContent=new Date().toLocaleString('pt-BR');
-    const loaded=BASE_DATA.consolidado||{};
-    const dbg=BASE_DATA._debug||{};
-    updateConnectionState('linked',`Conectado: <b>${receber.meta.name}</b> + <b>${controle.meta.name}</b> • ${loaded.recebiveis?.length||0} recebíveis • ${loaded.notasFaturadas?.length||0} notas faturadas • fonte: ${dbg.source||'n/d'} • meses fat: ${crMonthSummary(dbg.fatMonths)}`);
+    updateConnectionState('linked',`Conectado: <b>${receber.meta.name}</b> + <b>${controle.meta.name}</b>`);
   }catch(e){setError(e.message);console.error(e);}
   finally{setLoading(false);}
 }
@@ -889,7 +887,9 @@ function agendaItemDate(row){return rowDate(row);}
 function setAgendaMonth(type,month){agendaState[type]=month;render();}
 function renderMonthSwitch(targetId,type,items){
   const years=availableYears();
-  const year = globalDateFilter.year !== 'todos' ? globalDateFilter.year : ((globalDateFilter.start||globalDateFilter.end||'').slice(0,4) || years[years.length-1] || '2026');
+  const currentYear=String(new Date().getFullYear());
+  const lastPastOrCurrent=years.filter(y=>y<=currentYear).pop();
+  const year = globalDateFilter.year !== 'todos' ? globalDateFilter.year : ((globalDateFilter.start||globalDateFilter.end||'').slice(0,4) || (years.includes(currentYear)?currentYear:lastPastOrCurrent) || years[years.length-1] || currentYear);
   const months = Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,'0')}`);
   const monthsWithData=months.filter(m=>items.some(x=>monthKey(agendaItemDate(x))===m));
   if(!agendaState[type] || !agendaState[type].startsWith(year)){
