@@ -558,7 +558,8 @@ async function readFromSharePoint(){
     document.getElementById('btnRefresh').disabled=false;
     document.getElementById('btnLogout').style.display='inline-flex';
     document.getElementById('lastUpdateTime').textContent=new Date().toLocaleString('pt-BR');
-    updateConnectionState('linked',`Conectado: <b>${receber.meta.name}</b> + <b>${controle.meta.name}</b>`);
+    const loaded=BASE_DATA.consolidado||{};
+    updateConnectionState('linked',`Conectado: <b>${receber.meta.name}</b> + <b>${controle.meta.name}</b> • ${loaded.recebiveis?.length||0} recebíveis • ${loaded.notasFaturadas?.length||0} notas faturadas`);
   }catch(e){setError(e.message);console.error(e);}
   finally{setLoading(false);}
 }
@@ -571,13 +572,37 @@ function usePreloaded(){
   render();
 }
 
-function crSheetRows(wb,name,headerRow=0){
-  const ws=wb.Sheets[name]; if(!ws) return [];
+function crHeader(v){return String(v||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();}
+function crKey(v){return crHeader(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'');}
+function crFindSheetName(wb,name){
+  if(wb.Sheets[name]) return name;
+  const wanted=crKey(name);
+  return (wb.SheetNames||[]).find(n=>crKey(n)===wanted) || (wb.SheetNames||[]).find(n=>crKey(n).includes(wanted)||wanted.includes(crKey(n))) || name;
+}
+function crHeaderScore(row,required=[]){
+  const keys=new Set((row||[]).map(crKey).filter(Boolean));
+  return (required||[]).reduce((score,h)=>score+(keys.has(crKey(h))?1:0),0);
+}
+function crResolveHeaderRow(matrix,preferred=0,required=[]){
+  if(!required?.length || crHeaderScore(matrix[preferred]||[],required)>0) return preferred;
+  let best=preferred, bestScore=-1;
+  matrix.slice(0,20).forEach((row,i)=>{const score=crHeaderScore(row,required); if(score>bestScore){best=i;bestScore=score;}});
+  return bestScore>0?best:preferred;
+}
+function crSheetRows(wb,name,headerRow=0,required=[]){
+  const sheetName=crFindSheetName(wb,name), ws=wb.Sheets[sheetName]; if(!ws) return [];
   const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
-  const headers=(matrix[headerRow]||[]).map(h=>String(h||'').trim());
-  return matrix.slice(headerRow+1).map(row=>{
+  const resolvedHeaderRow=crResolveHeaderRow(matrix,headerRow,required);
+  const headers=(matrix[resolvedHeaderRow]||[]).map(crHeader);
+  return matrix.slice(resolvedHeaderRow+1).map(row=>{
     const obj={}; headers.forEach((h,i)=>{if(h)obj[h]=row[i];}); return obj;
   });
+}
+function crGet(row,...names){
+  for(const name of names){if(row?.[name]!=null && row[name]!=='') return row[name];}
+  const wanted=names.map(crKey);
+  const found=Object.keys(row||{}).find(k=>wanted.includes(crKey(k)));
+  return found?row[found]:null;
 }
 function crNum(v){if(typeof v==='number')return isFinite(v)?v:0;if(v==null||v==='')return 0;return Number(String(v).replace(/\./g,'').replace(',','.'))||0;}
 function crText(v,fallback=''){return v==null||v===''?fallback:String(v).trim();}
@@ -606,18 +631,18 @@ function crNormalizeCode(v){return crText(v).replace(/\D/g,'');}
 function crIsSampleCode(v){return ['5910','5911'].includes(crNormalizeCode(v));}
 function collectSampleInvoiceNumbers(wbC){
   const sampleNfs=new Set();
-  crSheetRows(wbC,'NF Saida').forEach(r=>{
-    if(crIsSampleCode(r['D_NFSaida[CFOP]'])) sampleNfs.add(crText(r['D_NFSaida[nNF]']||r['[NFE_Saida]']));
+  crSheetRows(wbC,'NF Saida',0,['D_NFSaida[CFOP]']).forEach(r=>{
+    if(crIsSampleCode(crGet(r,'D_NFSaida[CFOP]','CFOP'))) sampleNfs.add(crText(crGet(r,'D_NFSaida[nNF]','[NFE_Saida]','NFe','Nota Fiscal')));
   });
-  crSheetRows(wbC,'Base - Pedidos').forEach(r=>{
-    if(crIsSampleCode(r['F_Venda[cfop]'])) sampleNfs.add(crText(r['[NFE_Saida]']||r['Coluna6']));
+  crSheetRows(wbC,'Base - Pedidos',0,['F_Venda[cfop]']).forEach(r=>{
+    if(crIsSampleCode(crGet(r,'F_Venda[cfop]','CFOP'))) sampleNfs.add(crText(crGet(r,'[NFE_Saida]','Coluna6','NFe','Nota Fiscal')));
   });
   sampleNfs.delete('');
   return sampleNfs;
 }
 function isSampleFaturamentoRow(row,sampleNfs){
-  const nf=crText(row['NFe']||row['Nota Fiscal']);
-  return sampleNfs.has(nf) || crIsSampleCode(row['PV']) || crIsSampleCode(row['PV Origem']) || crIsSampleCode(row['F_Venda[cfop]']) || crIsSampleCode(row['D_NFSaida[CFOP]']);
+  const nf=crText(crGet(row,'NFe','Nota Fiscal'));
+  return sampleNfs.has(nf) || crIsSampleCode(crGet(row,'PV')) || crIsSampleCode(crGet(row,'PV Origem')) || crIsSampleCode(crGet(row,'F_Venda[cfop]','CFOP')) || crIsSampleCode(crGet(row,'D_NFSaida[CFOP]','CFOP'));
 }
 function crAgingLabel(days){if(days<=0)return 'A vencer'; if(days<=30)return '0-30'; if(days<=60)return '31-60'; if(days<=90)return '61-90'; return '90+';}
 function crEmptyCompany(){
@@ -628,59 +653,62 @@ function parseReceivablesData(receberBuf,controleBuf){
   const wbC=XLSX.read(controleBuf,{type:'array',cellDates:true,cellNF:false});
   const data={marck:crEmptyCompany(),grattano:crEmptyCompany()};
   const sampleNfs=collectSampleInvoiceNumbers(wbC);
-  const openRows=crSheetRows(wbR,'Contas em Aberto',1).filter(r=>crNum(r['A Receber'])>0 && !sampleNfs.has(crText(r['Nota Fiscal']||r['Ref. NF'])));
-  const recRows=crSheetRows(wbR,'Base Recebimentos');
-  const fatRowsR=crSheetRows(wbR,'Base Faturamentos').filter(r=>!isSampleFaturamentoRow(r,sampleNfs));
-  const rvRows=crSheetRows(wbC,'Resultado Vendas').filter(r=>!isSampleFaturamentoRow(r,sampleNfs));
-  const pmrRows=crSheetRows(wbC,'Recebimentos de Valores');
-  const pmrByNf=new Map(pmrRows.map(r=>[crText(r['D_NFSaida[nNF]']),crNum(r['[PMR__Ponderado_]'])||null]));
-  const hasResultadoVendas = rvRows.some(r=>crNum(r['Total']) && crDate(r['Data Fat']||r['Prev. Fat']));
+  const openRows=crSheetRows(wbR,'Contas em Aberto',1,['A Receber','Vencimento','Status']).filter(r=>crNum(crGet(r,'A Receber'))>0 && !sampleNfs.has(crText(crGet(r,'Nota Fiscal','Ref. NF'))));
+  const recRows=crSheetRows(wbR,'Base Recebimentos',0,['Valor da Conta']);
+  const fatRowsR=crSheetRows(wbR,'Base Faturamentos',0,['Total da Nota Fiscal']).filter(r=>!isSampleFaturamentoRow(r,sampleNfs));
+  const rvRows=crSheetRows(wbC,'Resultado Vendas',0,['NFe','Data Fat','Total']).filter(r=>!isSampleFaturamentoRow(r,sampleNfs));
+  const pmrRows=crSheetRows(wbC,'Recebimentos de Valores',0,['D_NFSaida[nNF]']);
+  const pmrByNf=new Map(pmrRows.map(r=>[crText(crGet(r,'D_NFSaida[nNF]','NFe','Nota Fiscal')),crNum(crGet(r,'[PMR__Ponderado_]','PMR'))||null]));
+  const hasResultadoVendas = rvRows.some(r=>crNum(crGet(r,'Total')) && crDate(crGet(r,'Data Fat','Prev. Fat')));
+  if(!openRows.length && !rvRows.length && !fatRowsR.length){
+    throw new Error(`Planilhas baixadas, mas nenhuma linha útil foi encontrada. Abas Contas a Receber: ${(wbR.SheetNames||[]).join(', ')}. Abas Controle: ${(wbC.SheetNames||[]).join(', ')}.`);
+  }
 
   for(const r of openRows){
-    const key=crCompany(r['Empresa']), d=data[key], valor=crNum(r['A Receber']);
-    const cliente=crText(r['Razão Social'],'Não informado'), venc=crDate(r['Vencimento']), emissao=crDate(r['Emissão']);
-    const previsao=crDate(r['Previsão de Pagamento'])||'Não informada', statusTxt=crText(r['Status']);
-    const diasRaw=crNum(r['Dias em atraso']), dias=statusTxt.toLowerCase().includes('inad')?Math.abs(diasRaw):0;
-    const setor=crSetor(cliente,r['Canal']), nf=crText(r['Nota Fiscal']||r['Ref. NF']);
+    const key=crCompany(crGet(r,'Empresa')), d=data[key], valor=crNum(crGet(r,'A Receber'));
+    const cliente=crText(crGet(r,'Razão Social','Razao Social','Cliente'),'Não informado'), venc=crDate(crGet(r,'Vencimento')), emissao=crDate(crGet(r,'Emissão','Emissao'));
+    const previsao=crDate(crGet(r,'Previsão de Pagamento','Previsao de Pagamento'))||'Não informada', statusTxt=crText(crGet(r,'Status'));
+    const diasRaw=crNum(crGet(r,'Dias em atraso','Dias em Atraso')), dias=statusTxt.toLowerCase().includes('inad')?Math.abs(diasRaw):0;
+    const setor=crSetor(cliente,crGet(r,'Canal')), nf=crText(crGet(r,'Nota Fiscal','Ref. NF'));
     d.carteira+=valor; if(statusTxt.toLowerCase().includes('inad')) d.inadimplencia+=valor; else d.aVencer+=valor;
     const mi=crMonthIndex(venc); if(mi!=null){d.mensal.carteira[mi]+=valor;if(statusTxt.toLowerCase().includes('inad'))d.mensal.inad[mi]+=valor;d.mensal.proj[mi]+=valor;}
     const isInad=statusTxt.toLowerCase().includes('inad');
-    const titulo={data:venc||emissao,empresa:crCompanyLabel(key),nota:nf,pedido:crText(r['PEDIDO OM']||r['Ref. NF'],'-'),empenho:crText(r['Empenho'],'-'),cliente,setor,emissao,vencimento:venc,previsao,valor,dias,faixa:crAgingLabel(dias),status:isInad?'atrasado':'pendente',statusPlanilha:statusTxt,conta:crText(r['Fonte']||r['Canal'],'-'),risco:isInad&&(dias>60||forecastMissing(previsao))?'alto':'baixo',responsavel:'Financeiro / Cobrança',acao:forecastMissing(previsao)?'Confirmar data de recebimento':'Monitorar baixa na data prevista'};
+    const titulo={data:venc||emissao,empresa:crCompanyLabel(key),nota:nf,pedido:crText(crGet(r,'PEDIDO OM','Pedido OM','Ref. NF'),'-'),empenho:crText(crGet(r,'Empenho'),'-'),cliente,setor,emissao,vencimento:venc,previsao,valor,dias,faixa:crAgingLabel(dias),status:isInad?'atrasado':'pendente',statusPlanilha:statusTxt,conta:crText(crGet(r,'Fonte','Canal'),'-'),risco:isInad&&(dias>60||forecastMissing(previsao))?'alto':'baixo',responsavel:'Financeiro / Cobrança',acao:forecastMissing(previsao)?'Confirmar data de recebimento':'Monitorar baixa na data prevista'};
     d.recebiveis.push(titulo);
     if(isInad) d.inadimplentes.push(titulo);
   }
   for(const r of recRows){
-    const key=crCompany(r['Minha Empresa (Nome Fantasia)']), mi=Number(r['Mês'])-1;
-    if(mi>=0&&mi<12) data[key].mensal.rec[mi]+=crNum(r['Valor da Conta']);
-    data[key].recebimentos.push({data:crDate(r['Data de Crédito ou Débito (No Extrato)']||r['Previsão']||r['Vencimento']),valor:crNum(r['Valor da Conta']),empresa:crCompanyLabel(key),cliente:crText(r['Cliente']||r['Razão Social'],'Não informado'),nota:crText(r['Nota Fiscal'],'-')});
+    const key=crCompany(crGet(r,'Minha Empresa (Nome Fantasia)','Empresa')), mi=Number(crGet(r,'Mês','Mes'))-1;
+    if(mi>=0&&mi<12) data[key].mensal.rec[mi]+=crNum(crGet(r,'Valor da Conta'));
+    data[key].recebimentos.push({data:crDate(crGet(r,'Data de Crédito ou Débito (No Extrato)','Data de Credito ou Debito (No Extrato)','Previsão','Previsao','Vencimento')),valor:crNum(crGet(r,'Valor da Conta')),empresa:crCompanyLabel(key),cliente:crText(crGet(r,'Cliente','Razão Social','Razao Social'),'Não informado'),nota:crText(crGet(r,'Nota Fiscal'),'-')});
   }
   const rvByNf=new Map();
   for(const r of rvRows){
-    const nf=crText(r['NFe']); if(!nf) continue;
+    const nf=crText(crGet(r,'NFe','Nota Fiscal')); if(!nf) continue;
     const cur=rvByNf.get(nf)||{total:0,resultado:0,pedido:'-',empenho:'-',cliente:'Não informado',dataRecebimento:'Não informada',dataEntrega:'Não informada',prevFat:'Não informada'};
-    cur.total+=crNum(r['Total']);
-    cur.resultado+=crNum(r['MC ($)']);
-    cur.pedido=cur.pedido==='-'?'PV '+crText(r['PV'],'-'):cur.pedido;
-    cur.empenho=cur.empenho==='-'?crText(r['Empenho'],'-'):cur.empenho;
-    cur.cliente=cur.cliente==='Não informado'?crText(r['Cliente'],'Não informado'):cur.cliente;
-    cur.dataRecebimento=cur.dataRecebimento==='Não informada'?(crDate(r['Data Recebimento R$'])||'Não informada'):cur.dataRecebimento;
-    cur.dataEntrega=cur.dataEntrega==='Não informada'?(crDate(r['Data Ent'])||'Não informada'):cur.dataEntrega;
-    cur.prevFat=cur.prevFat==='Não informada'?(crDate(r['Prev. Fat'])||'Não informada'):cur.prevFat;
+    cur.total+=crNum(crGet(r,'Total'));
+    cur.resultado+=crNum(crGet(r,'MC ($)','MC'));
+    cur.pedido=cur.pedido==='-'?'PV '+crText(crGet(r,'PV'),'-'):cur.pedido;
+    cur.empenho=cur.empenho==='-'?crText(crGet(r,'Empenho'),'-'):cur.empenho;
+    cur.cliente=cur.cliente==='Não informado'?crText(crGet(r,'Cliente'),'Não informado'):cur.cliente;
+    cur.dataRecebimento=cur.dataRecebimento==='Não informada'?(crDate(crGet(r,'Data Recebimento R$','Data Recebimento'))||'Não informada'):cur.dataRecebimento;
+    cur.dataEntrega=cur.dataEntrega==='Não informada'?(crDate(crGet(r,'Data Ent','Data Entrega'))||'Não informada'):cur.dataEntrega;
+    cur.prevFat=cur.prevFat==='Não informada'?(crDate(crGet(r,'Prev. Fat','Previsão Fat','Previsao Fat'))||'Não informada'):cur.prevFat;
     rvByNf.set(nf,cur);
     if(hasResultadoVendas){
-      const key=crCompany(r['Empresa']), date=crDate(r['Data Fat']||r['Prev. Fat']), mi=crMonthIndex(date), valor=crNum(r['Total']);
+      const key=crCompany(crGet(r,'Empresa')), date=crDate(crGet(r,'Data Fat','Prev. Fat','Previsão Fat','Previsao Fat')), mi=crMonthIndex(date), valor=crNum(crGet(r,'Total'));
       if(mi!=null) data[key].mensal.fat[mi]+=valor;
-      data[key].notasFaturadas.push({data:date,empresa:crCompanyLabel(key),nota:nf,pedido:'PV '+crText(r['PV'],'-'),empenho:crText(r['Empenho'],'-'),cliente:crText(r['Cliente'],'Não informado'),valor,margem:crNum(r['MC (%)'])*100,resultado:crNum(r['MC ($)']),dataRecebimento:crDate(r['Data Recebimento R$'])||'Não informada',dataEntrega:crDate(r['Data Ent'])||'Não informada',pmr:pmrByNf.get(nf)||null,prevFat:crDate(r['Prev. Fat'])||'Não informada'});
+      data[key].notasFaturadas.push({data:date,empresa:crCompanyLabel(key),nota:nf,pedido:'PV '+crText(crGet(r,'PV'),'-'),empenho:crText(crGet(r,'Empenho'),'-'),cliente:crText(crGet(r,'Cliente'),'Não informado'),valor,margem:crNum(crGet(r,'MC (%)','MC %'))*100,resultado:crNum(crGet(r,'MC ($)','MC')),dataRecebimento:crDate(crGet(r,'Data Recebimento R$','Data Recebimento'))||'Não informada',dataEntrega:crDate(crGet(r,'Data Ent','Data Entrega'))||'Não informada',pmr:pmrByNf.get(nf)||null,prevFat:crDate(crGet(r,'Prev. Fat','Previsão Fat','Previsao Fat'))||'Não informada'});
     }
   }
   for(const r of fatRowsR){
     if(hasResultadoVendas) continue;
-    const key=crCompany(r['Minha Empresa (Nome Fantasia)']), date=crDate(r['Data de Emissão (completa)']), mi=crMonthIndex(date), nf=crText(r['Nota Fiscal']);
-    const valor=crNum(r['Total da Nota Fiscal']);
+    const key=crCompany(crGet(r,'Minha Empresa (Nome Fantasia)','Empresa')), date=crDate(crGet(r,'Data de Emissão (completa)','Data de Emissao (completa)','Emissão','Emissao')), mi=crMonthIndex(date), nf=crText(crGet(r,'Nota Fiscal','NFe'));
+    const valor=crNum(crGet(r,'Total da Nota Fiscal','Total'));
     if(mi!=null) data[key].mensal.fat[mi]+=valor;
     const rv=rvByNf.get(nf)||{};
     const resultado=rv.resultado||0, margem=rv.total?resultado/rv.total*100:0;
-    data[key].notasFaturadas.push({data:date,empresa:crCompanyLabel(key),nota:nf,pedido:rv.pedido||'-',empenho:rv.empenho||'-',cliente:crText(r['Cliente (Razão Social)']||r['Cliente (Nome Fantasia)']||rv.cliente,'Não informado'),valor,margem,resultado,dataRecebimento:rv.dataRecebimento||'Não informada',dataEntrega:rv.dataEntrega||'Não informada',pmr:pmrByNf.get(nf)||null,prevFat:rv.prevFat||date||'Não informada'});
+    data[key].notasFaturadas.push({data:date,empresa:crCompanyLabel(key),nota:nf,pedido:rv.pedido||'-',empenho:rv.empenho||'-',cliente:crText(crGet(r,'Cliente (Razão Social)','Cliente (Razao Social)','Cliente (Nome Fantasia)','Cliente')||rv.cliente,'Não informado'),valor,margem,resultado,dataRecebimento:rv.dataRecebimento||'Não informada',dataEntrega:rv.dataEntrega||'Não informada',pmr:pmrByNf.get(nf)||null,prevFat:rv.prevFat||date||'Não informada'});
   }
   for(const key of ['marck','grattano']) finalizeCompany(data[key]);
   data.consolidado=mergeCompanies(data.marck,data.grattano);
