@@ -559,7 +559,8 @@ async function readFromSharePoint(){
     document.getElementById('btnLogout').style.display='inline-flex';
     document.getElementById('lastUpdateTime').textContent=new Date().toLocaleString('pt-BR');
     const loaded=BASE_DATA.consolidado||{};
-    updateConnectionState('linked',`Conectado: <b>${receber.meta.name}</b> + <b>${controle.meta.name}</b> • ${loaded.recebiveis?.length||0} recebíveis • ${loaded.notasFaturadas?.length||0} notas faturadas`);
+    const dbg=BASE_DATA._debug||{};
+    updateConnectionState('linked',`Conectado: <b>${receber.meta.name}</b> + <b>${controle.meta.name}</b> • ${loaded.recebiveis?.length||0} recebíveis • ${loaded.notasFaturadas?.length||0} notas faturadas • fonte: ${dbg.source||'n/d'} • meses fat: ${crMonthSummary(dbg.fatMonths)}`);
   }catch(e){setError(e.message);console.error(e);}
   finally{setLoading(false);}
 }
@@ -584,7 +585,7 @@ function crHeaderScore(row,required=[]){
   return (required||[]).reduce((score,h)=>score+(keys.has(crKey(h))?1:0),0);
 }
 function crResolveHeaderRow(matrix,preferred=0,required=[]){
-  if(!required?.length || crHeaderScore(matrix[preferred]||[],required)>0) return preferred;
+  if(!required?.length) return preferred;
   let best=preferred, bestScore=-1;
   matrix.slice(0,20).forEach((row,i)=>{const score=crHeaderScore(row,required); if(score>bestScore){best=i;bestScore=score;}});
   return bestScore>0?best:preferred;
@@ -604,8 +605,24 @@ function crGet(row,...names){
   const found=Object.keys(row||{}).find(k=>wanted.includes(crKey(k)));
   return found?row[found]:null;
 }
-function crNum(v){if(typeof v==='number')return isFinite(v)?v:0;if(v==null||v==='')return 0;return Number(String(v).replace(/\./g,'').replace(',','.'))||0;}
+function crNum(v){
+  if(typeof v==='number')return isFinite(v)?v:0;
+  if(v==null||v==='')return 0;
+  let s=String(v).replace(/\s/g,'').replace(/[R$%]/g,'');
+  if(!s) return 0;
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  else if(/^-?\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,'');
+  else s=s.replace(/,/g,'');
+  return Number(s)||0;
+}
 function crText(v,fallback=''){return v==null||v===''?fallback:String(v).trim();}
+function crMonthCounts(rows){
+  return (rows||[]).reduce((acc,r)=>{const m=monthKey(rowDate(r)); if(m) acc[m]=(acc[m]||0)+1; return acc;},{});
+}
+function crMonthSummary(counts){
+  const entries=Object.entries(counts||{}).sort();
+  return entries.length?entries.map(([m,c])=>`${m}:${c}`).join(', '):'sem meses';
+}
 function crDate(v){
   if(!v) return '';
   if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
@@ -659,7 +676,7 @@ function parseReceivablesData(receberBuf,controleBuf){
   const rvRows=crSheetRows(wbC,'Resultado Vendas',0,['NFe','Data Fat','Total']).filter(r=>!isSampleFaturamentoRow(r,sampleNfs));
   const pmrRows=crSheetRows(wbC,'Recebimentos de Valores',0,['D_NFSaida[nNF]']);
   const pmrByNf=new Map(pmrRows.map(r=>[crText(crGet(r,'D_NFSaida[nNF]','NFe','Nota Fiscal')),crNum(crGet(r,'[PMR__Ponderado_]','PMR'))||null]));
-  const hasResultadoVendas = rvRows.some(r=>crNum(crGet(r,'Total')) && crDate(crGet(r,'Data Fat','Prev. Fat')));
+  const hasResultadoVendas = rvRows.some(r=>crNum(crGet(r,'Total')) && crDate(crGet(r,'Data Fat','Data Faturamento','Faturamento','Prev. Fat')));
   if(!openRows.length && !rvRows.length && !fatRowsR.length){
     throw new Error(`Planilhas baixadas, mas nenhuma linha útil foi encontrada. Abas Contas a Receber: ${(wbR.SheetNames||[]).join(', ')}. Abas Controle: ${(wbC.SheetNames||[]).join(', ')}.`);
   }
@@ -696,7 +713,7 @@ function parseReceivablesData(receberBuf,controleBuf){
     cur.prevFat=cur.prevFat==='Não informada'?(crDate(crGet(r,'Prev. Fat','Previsão Fat','Previsao Fat'))||'Não informada'):cur.prevFat;
     rvByNf.set(nf,cur);
     if(hasResultadoVendas){
-      const key=crCompany(crGet(r,'Empresa')), date=crDate(crGet(r,'Data Fat','Prev. Fat','Previsão Fat','Previsao Fat')), mi=crMonthIndex(date), valor=crNum(crGet(r,'Total'));
+      const key=crCompany(crGet(r,'Empresa')), date=crDate(crGet(r,'Data Fat','Data Faturamento','Faturamento','Prev. Fat','Previsão Fat','Previsao Fat')), mi=crMonthIndex(date), valor=crNum(crGet(r,'Total'));
       if(mi!=null) data[key].mensal.fat[mi]+=valor;
       data[key].notasFaturadas.push({data:date,empresa:crCompanyLabel(key),nota:nf,pedido:'PV '+crText(crGet(r,'PV'),'-'),empenho:crText(crGet(r,'Empenho'),'-'),cliente:crText(crGet(r,'Cliente'),'Não informado'),valor,margem:crNum(crGet(r,'MC (%)','MC %'))*100,resultado:crNum(crGet(r,'MC ($)','MC')),dataRecebimento:crDate(crGet(r,'Data Recebimento R$','Data Recebimento'))||'Não informada',dataEntrega:crDate(crGet(r,'Data Ent','Data Entrega'))||'Não informada',pmr:pmrByNf.get(nf)||null,prevFat:crDate(crGet(r,'Prev. Fat','Previsão Fat','Previsao Fat'))||'Não informada'});
     }
@@ -712,6 +729,15 @@ function parseReceivablesData(receberBuf,controleBuf){
   }
   for(const key of ['marck','grattano']) finalizeCompany(data[key]);
   data.consolidado=mergeCompanies(data.marck,data.grattano);
+  data._debug={
+    source:hasResultadoVendas?'Resultado Vendas':'Base Faturamentos',
+    openRows:openRows.length,
+    resultadoVendasRows:rvRows.length,
+    baseFaturamentosRows:fatRowsR.length,
+    sampleNfs:sampleNfs.size,
+    fatMonths:crMonthCounts(data.consolidado.notasFaturadas),
+    receberMonths:crMonthCounts(data.consolidado.recebiveis)
+  };
   return data;
 }
 function finalizeCompany(d){
