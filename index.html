@@ -831,18 +831,20 @@ function monthKey(s){const dt=crDate(s);return /^\d{4}-\d{2}/.test(dt)?dt.slice(
 function monthLabel(k){const [y,m]=k.split('-').map(Number);return monthNames[m-1];}
 function weekOfMonth(s){const dt=parseDate(s);return Math.ceil(dt.getDate()/7);}
 function groupBy(arr,fn){return arr.reduce((acc,item)=>{const k=fn(item);(acc[k]=acc[k]||[]).push(item);return acc;},{});}
+function agendaItemDate(row){return rowDate(row);}
+function setAgendaMonth(type,month){agendaState[type]=month;render();}
 function renderMonthSwitch(targetId,type,items){
   const years=availableYears();
   const year = globalDateFilter.year !== 'todos' ? globalDateFilter.year : ((globalDateFilter.start||globalDateFilter.end||'').slice(0,4) || years[years.length-1] || '2026');
   const months = Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,'0')}`);
-  const monthsWithData=months.filter(m=>items.some(x=>monthKey(x.data)===m));
-  if(!agendaState[type] || !agendaState[type].startsWith(year) || (monthsWithData.length && !monthsWithData.includes(agendaState[type]))){
+  const monthsWithData=months.filter(m=>items.some(x=>monthKey(agendaItemDate(x))===m));
+  if(!agendaState[type] || !agendaState[type].startsWith(year)){
     const currentMonth=`${year}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
     agendaState[type]=monthsWithData.includes(currentMonth)?currentMonth:(monthsWithData[monthsWithData.length-1]||`${year}-01`);
   }
   document.getElementById(targetId).innerHTML=months.map(m=>{
-    const hasData = items.some(x=>monthKey(x.data)===m);
-    return `<button class="ag-month-btn ${agendaState[type]===m?'active':''} ${hasData?'':'empty-month'}" title="${hasData?'Com lançamentos':'Sem lançamentos parametrizados'}" onclick="agendaState.${type}='${m}';render();">${monthLabel(m)}</button>`;
+    const hasData = items.some(x=>monthKey(agendaItemDate(x))===m);
+    return `<button class="ag-month-btn ${agendaState[type]===m?'active':''} ${hasData?'':'empty-month'}" title="${hasData?'Com lançamentos':'Sem lançamentos parametrizados'}" onclick="setAgendaMonth('${type}','${m}')">${monthLabel(m)}</button>`;
   }).join('');
 }
 function agToggleDay(id){document.getElementById(id)?.classList.toggle('open');}
@@ -924,25 +926,26 @@ function applyAgendaFilters(type,items){
   });
   const ord=f.ordenacao||'data-asc';
   rows.sort((a,b)=>{
-    if(ord==='data-desc') return b.data.localeCompare(a.data);
+    const ad=agendaItemDate(a), bd=agendaItemDate(b);
+    if(ord==='data-desc') return bd.localeCompare(ad);
     if(ord==='valor-desc') return (b.valor||0)-(a.valor||0);
     if(ord==='resultado-desc') return (b.resultado||0)-(a.resultado||0);
-    return a.data.localeCompare(b.data);
+    return ad.localeCompare(bd);
   });
   return rows;
 }
 
 function renderAgenda(containerId, switchId, type, items, mode){
   renderMonthSwitch(switchId,type,items);
-  const month=agendaState[type], monthRows=items.filter(x=>monthKey(x.data)===month), rows=applyAgendaFilters(type,monthRows);
+  const month=agendaState[type], monthRows=items.filter(x=>monthKey(agendaItemDate(x))===month), rows=applyAgendaFilters(type,monthRows);
   const el=document.getElementById(containerId);
   if(!rows.length){el.innerHTML=`<div class="ag-panel">${renderAgendaFilters(type,monthRows)}<div class="ag-summary"><strong>Sem lançamentos para os filtros selecionados neste mês.</strong></div></div>`;return;}
-  const total=rows.reduce((s,x)=>s+x.valor,0), dias=new Set(rows.map(x=>x.data)).size;
-  const maiorDia=Object.entries(groupBy(rows,x=>x.data)).map(([d,it])=>[d,it.reduce((s,x)=>s+x.valor,0)]).sort((a,b)=>b[1]-a[1])[0];
+  const total=rows.reduce((s,x)=>s+x.valor,0), dias=new Set(rows.map(agendaItemDate)).size;
+  const maiorDia=Object.entries(groupBy(rows,agendaItemDate)).map(([d,it])=>[d,it.reduce((s,x)=>s+x.valor,0)]).sort((a,b)=>b[1]-a[1])[0];
   const extra=mode==='faturamento'?rows.reduce((s,x)=>s+x.resultado,0):rows.filter(x=>String(x.status).toLowerCase().includes('prazo')).reduce((s,x)=>s+x.valor,0);
-  const weeks=groupBy(rows,x=>weekOfMonth(x.data));
+  const weeks=groupBy(rows,x=>weekOfMonth(agendaItemDate(x)));
   const weekHtml=Object.keys(weeks).sort((a,b)=>a-b).map(w=>{
-    const wr=weeks[w], byDay=groupBy(wr,x=>x.data), weekTotal=wr.reduce((s,x)=>s+x.valor,0);
+    const wr=weeks[w], byDay=groupBy(wr,agendaItemDate), weekTotal=wr.reduce((s,x)=>s+x.valor,0);
     const dates=Object.keys(byDay).sort(), range=`${dateLabel(dates[0])} a ${dateLabel(dates[dates.length-1])}`;
     const dayHtml=dates.map((day,idx)=>{
       const dr=byDay[day], dayTotal=dr.reduce((s,x)=>s+x.valor,0), id=`ag-${mode}-${month}-${w}-${idx}`; 
